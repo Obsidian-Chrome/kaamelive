@@ -172,6 +172,37 @@ const volumeSlider  = document.getElementById('volume');
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const iconFsEnter   = document.getElementById('icon-fs-enter');
 const iconFsExit    = document.getElementById('icon-fs-exit');
+const viewerBadge   = document.getElementById('viewer-badge');
+const viewerCount   = document.getElementById('viewer-count');
+
+// ─── Compteur de viewers ──────────────────────────────────────────────────
+// UUID stable par navigateur, stocké en localStorage
+function getViewerId() {
+  let id = localStorage.getItem('kaamelive-viewer-id');
+  if (!id) {
+    id = (crypto.randomUUID ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2) + Date.now().toString(36));
+    localStorage.setItem('kaamelive-viewer-id', id);
+  }
+  return id;
+}
+const VIEWER_ID = getViewerId();
+let pingTimer = null;
+
+async function ping() {
+  if (!VIDEO_BASE_URL) return; // pas de serveur local en mode GitHub Pages seul
+  try {
+    const r    = await fetch(`${VIDEO_BASE_URL}api/ping?id=${VIEWER_ID}`);
+    const data = await r.json();
+    viewerCount.textContent = data.viewers;
+    viewerBadge.style.display = 'flex';
+  } catch { /* ignorer les erreurs réseau */ }
+}
+
+function startPinging() {
+  ping();
+  if (!pingTimer) pingTimer = setInterval(ping, 30000);
+}
 
 // ─── État ─────────────────────────────────────────────────────────────────
 // 'idle'    → page ouverte, stream pas encore rejoint
@@ -219,7 +250,7 @@ function calcSync() {
 // En local (test) : laisser VIDEO_BASE_URL vide → chemins relatifs.
 // En prod (GitHub Pages + tunnel) : mettre l'URL Cloudflare avec slash final.
 //   ex: 'https://abc-def-123.trycloudflare.com/'
-const VIDEO_BASE_URL = 'https://requiring-meat-previous-insulin.trycloudflare.com/';
+const VIDEO_BASE_URL = 'https://crimes-periods-removed-purposes.trycloudflare.com/';
 
 function videoPath(ep) {
   return `${VIDEO_BASE_URL}videos/${ep.folder}/${encodeURIComponent(ep.file)}`;
@@ -304,6 +335,7 @@ function startStream() {
   setState('loading');
   startBtn.disabled = true;
   loadAndSeek(sync.ep, sync.position);
+  startPinging();
 }
 
 // Après une pause locale : calculer la position UTC actuelle et sauter dessus
