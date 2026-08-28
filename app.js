@@ -219,7 +219,7 @@ function calcSync() {
 // En local (test) : laisser VIDEO_BASE_URL vide → chemins relatifs.
 // En prod (GitHub Pages + tunnel) : mettre l'URL Cloudflare avec slash final.
 //   ex: 'https://abc-def-123.trycloudflare.com/'
-const VIDEO_BASE_URL = '';
+const VIDEO_BASE_URL = 'https://requiring-meat-previous-insulin.trycloudflare.com/';
 
 function videoPath(ep) {
   return `${VIDEO_BASE_URL}videos/${ep.folder}/${encodeURIComponent(ep.file)}`;
