@@ -6,9 +6,10 @@
 //  • /api/ping?id=UUID  → enregistre un viewer actif, renvoie { viewers: N }
 // ═══════════════════════════════════════════════════════════════════════════
 
-const http = require('http');
-const fs   = require('fs');
-const path = require('path');
+const http              = require('http');
+const fs                = require('fs');
+const path              = require('path');
+const { WebSocketServer } = require('ws');
 
 const PORT    = 8080;
 const ROOT    = __dirname;
@@ -110,7 +111,7 @@ function serveStatic(req, res, filePath) {
 }
 
 // ── Serveur HTTP ─────────────────────────────────────────────────────────────
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
 
   // Preflight CORS
   if (req.method === 'OPTIONS') {
@@ -153,7 +154,36 @@ http.createServer((req, res) => {
 
   serveStatic(req, res, filePath);
 
-}).listen(PORT, () => {
+});
+
+// ── WebSocket : chat ──────────────────────────────────────────────────────────
+const wss = new WebSocketServer({ server });
+
+wss.on('connection', (ws) => {
+  ws.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(String(raw)); } catch { return; }
+    if (msg.type !== 'chat') return;
+
+    const pseudo = String(msg.pseudo || '').trim().slice(0, 20);
+    const text   = String(msg.text   || '').trim().slice(0, 200);
+    if (!pseudo || !text) return;
+
+    const out = JSON.stringify({
+      type  : 'chat',
+      pseudo,
+      text,
+      time  : new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+    });
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === 1 /* OPEN */) client.send(out);
+    });
+  });
+  ws.on('error', () => {});
+});
+
+server.listen(PORT, () => {
   const line = '─'.repeat(44);
   console.log(`\n  ${line}`);
   console.log(`  Kaamelive server  →  http://localhost:${PORT}`);

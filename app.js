@@ -172,6 +172,7 @@ const volumeSlider  = document.getElementById('volume');
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const iconFsEnter   = document.getElementById('icon-fs-enter');
 const iconFsExit    = document.getElementById('icon-fs-exit');
+const loadingSpinner = document.getElementById('loading-spinner');
 const viewerBadge   = document.getElementById('viewer-badge');
 const viewerCount   = document.getElementById('viewer-count');
 const muteBtn       = document.getElementById('mute-btn');
@@ -181,6 +182,8 @@ const timeCurrent   = document.getElementById('time-current');
 const timeTotal     = document.getElementById('time-total');
 const timelineFill  = document.getElementById('timeline-fill');
 const timelineDot   = document.getElementById('timeline-dot');
+const chatBubble    = document.getElementById('chat-bubble');
+const notifBtn      = document.getElementById('notif-btn');
 
 // ─── Compteur de viewers ──────────────────────────────────────────────────
 // UUID stable par navigateur, stocké en localStorage
@@ -322,10 +325,15 @@ function setState(newState) {
     showOverlay();
   }
 
+  // Spinner : visible uniquement en état "loading"
+  loadingSpinner.classList.toggle('visible', newState === 'loading');
+
   player.classList.toggle('cursor-visible', newState !== 'playing');
 
   startBtn.style.display      = newState === 'idle' ? 'flex' : 'none';
   overlayBottom.style.display = newState === 'idle' ? 'none' : 'flex';
+  chatBubble.style.display    = newState === 'idle' ? 'none' : 'flex';
+  notifBtn.style.display      = newState === 'idle' ? 'none' : 'flex';
   if (newState === 'idle') episodeTitle.textContent = '';
 
   iconPlay .style.display  = newState === 'playing' ? 'none'  : 'block';
@@ -411,6 +419,14 @@ function toggleFullscreen() {
 // ─── Événements vidéo ─────────────────────────────────────────────────────
 video.addEventListener('timeupdate', () => {
   if (!suppressEvents) updateTimeline();
+});
+
+// Spinner pendant le buffering mid-lecture
+video.addEventListener('waiting', () => {
+  if (!suppressEvents) loadingSpinner.classList.add('visible');
+});
+video.addEventListener('playing', () => {
+  loadingSpinner.classList.remove('visible');
 });
 
 video.addEventListener('play', () => {
@@ -545,3 +561,248 @@ const savedVol  = parseFloat(localStorage.getItem('kaamelive-volume'));
 applyVolume(isNaN(savedVol) ? 0.2 : Math.max(0, Math.min(1, savedVol)));
 
 setState('idle');
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CHAT
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── DOM chat ─────────────────────────────────────────────────────────────
+const chatUnread    = document.getElementById('chat-unread');
+const chatPanel     = document.getElementById('chat-panel');
+const chatMsgs      = document.getElementById('chat-messages');
+const chatInput     = document.getElementById('chat-input');
+const chatSend      = document.getElementById('chat-send');
+const chatClose     = document.getElementById('chat-close');
+const emojiBtnEl    = document.getElementById('emoji-btn');
+const emojiPicker   = document.getElementById('emoji-picker');
+const pseudoModal   = document.getElementById('pseudo-modal');
+const pseudoInputEl = document.getElementById('pseudo-input');
+const pseudoConfirm = document.getElementById('pseudo-confirm');
+const pseudoChange  = document.getElementById('pseudo-change');
+const iconBellOn    = document.getElementById('icon-bell-on');
+const iconBellOff   = document.getElementById('icon-bell-off');
+const pseudoCancel  = document.getElementById('pseudo-cancel');
+
+// ─── Emojis ───────────────────────────────────────────────────────────────
+const EMOJIS = [
+  '😂','😭','😍','😎','😤','😱','🤔','🥰',
+  '👍','👎','👏','🙏','💪','🤌','🫡','👀',
+  '❤️','🔥','💯','🎉','⭐','💀','🤣','😆',
+  '⚔️','🏰','👑','🛡️','🐉','🐴','🍺','🍷',
+];
+
+(function buildEmojiGrid() {
+  emojiPicker.innerHTML = EMOJIS.map(e =>
+    `<button class="emoji-item" type="button" data-emoji="${e}">${e}</button>`
+  ).join('');
+  emojiPicker.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.emoji-item');
+    if (!btn) return;
+    const emoji = btn.dataset.emoji;
+    const pos   = chatInput.selectionStart ?? chatInput.value.length;
+    chatInput.value = chatInput.value.slice(0, pos) + emoji + chatInput.value.slice(pos);
+    chatInput.selectionStart = chatInput.selectionEnd = pos + [...emoji].length;
+    chatInput.focus();
+  });
+})();
+
+// ─── Son de notification ──────────────────────────────────────────────────
+const notifAudio = new Audio('notification_sound.mp3');
+notifAudio.volume = 0.25;
+
+let notifEnabled = localStorage.getItem('kaamelive-notif') !== 'off';
+
+function updateNotifIcon() {
+  iconBellOn .style.display = notifEnabled ? 'block' : 'none';
+  iconBellOff.style.display = notifEnabled ? 'none'  : 'block';
+  notifBtn.classList.toggle('notif-on', notifEnabled);
+  notifBtn.title = notifEnabled ? 'Désactiver les notifications sonores'
+                                : 'Activer les notifications sonores';
+}
+
+function playNotif() {
+  if (!notifEnabled) return;
+  notifAudio.currentTime = 0;
+  notifAudio.play().catch(() => {});
+}
+
+updateNotifIcon();
+
+// ─── État chat ────────────────────────────────────────────────────────────
+let chatWs       = null;
+let chatIsOpen   = false;
+let unreadCount  = 0;
+let wsRetryTimer = null;
+
+// ─── Pseudo ───────────────────────────────────────────────────────────────
+function getPseudo() { return localStorage.getItem('kaamelive-pseudo') || ''; }
+function savePseudo(v) { localStorage.setItem('kaamelive-pseudo', v.trim().slice(0, 20)); }
+
+// ─── URL WebSocket ────────────────────────────────────────────────────────
+function getChatWsUrl() {
+  if (!VIDEO_BASE_URL) {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${location.host}/ws`;
+  }
+  return VIDEO_BASE_URL.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws';
+}
+
+// ─── Connexion ────────────────────────────────────────────────────────────
+function connectChat() {
+  clearTimeout(wsRetryTimer);
+  try { chatWs = new WebSocket(getChatWsUrl()); } catch { scheduleWsRetry(); return; }
+
+  chatWs.onopen = () => {
+    clearTimeout(wsRetryTimer);
+    chatBubble.classList.remove('chat-bubble--offline');
+    chatInput.disabled  = false;
+    chatSend.disabled   = false;
+    appendSystemMsg('Connecté au chat');
+  };
+
+  chatWs.onmessage = ({ data }) => {
+    let msg;
+    try { msg = JSON.parse(data); } catch { return; }
+    if (msg.type === 'chat') onChatMsg(msg);
+  };
+
+  chatWs.onclose = chatWs.onerror = () => {
+    chatBubble.classList.add('chat-bubble--offline');
+    chatInput.disabled = true;
+    chatSend.disabled  = true;
+    appendSystemMsg('Déconnecté — reconnexion…');
+    scheduleWsRetry();
+  };
+}
+
+function scheduleWsRetry() {
+  clearTimeout(wsRetryTimer);
+  wsRetryTimer = setTimeout(connectChat, 5000);
+}
+
+// ─── Réception message ───────────────────────────────────────────────────
+function onChatMsg(msg) {
+  const mine = msg.pseudo === getPseudo();
+  addMsgEl(msg.pseudo, msg.text, msg.time, mine);
+  if (!mine) playNotif();
+  if (!chatIsOpen) { unreadCount++; updateBadge(); }
+}
+
+function addMsgEl(pseudo, text, time, mine) {
+  const d = document.createElement('div');
+  d.className = 'chat-msg' + (mine ? ' chat-msg--mine' : '');
+  d.innerHTML =
+    `<span class="chat-pseudo">${esc(pseudo)}</span>` +
+    `<span class="chat-text">${esc(text)}</span>` +
+    `<span class="chat-time">${esc(time)}</span>`;
+  chatMsgs.appendChild(d);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+function appendSystemMsg(text) {
+  const d = document.createElement('div');
+  d.className = 'chat-system';
+  d.textContent = text;
+  chatMsgs.appendChild(d);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Envoi ────────────────────────────────────────────────────────────────
+function sendChatMsg() {
+  const text = chatInput.value.trim();
+  if (!text || !chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+  chatWs.send(JSON.stringify({ type: 'chat', pseudo: getPseudo(), text }));
+  chatInput.value = '';
+  closeEmojiPicker();
+}
+
+// ─── Panel ────────────────────────────────────────────────────────────────
+function openChatPanel() {
+  if (!getPseudo()) { openPseudoModal(); return; }
+  chatIsOpen = true;
+  unreadCount = 0;
+  updateBadge();
+  chatPanel.classList.add('open');
+  setTimeout(() => chatInput.focus(), 280);
+}
+
+function closeChatPanel() {
+  chatIsOpen = false;
+  chatPanel.classList.remove('open');
+  closeEmojiPicker();
+}
+
+// ─── Emoji picker ─────────────────────────────────────────────────────────
+function toggleEmojiPicker() { emojiPicker.classList.toggle('open'); }
+function closeEmojiPicker()  { emojiPicker.classList.remove('open'); }
+
+// ─── Pseudo modal ─────────────────────────────────────────────────────────
+function openPseudoModal(fromChange) {
+  pseudoInputEl.value = getPseudo();
+  pseudoModal.classList.add('open');
+  setTimeout(() => { pseudoInputEl.focus(); pseudoInputEl.select(); }, 50);
+}
+
+function closePseudoModal() { pseudoModal.classList.remove('open'); }
+
+function confirmPseudo() {
+  const name = pseudoInputEl.value.trim().slice(0, 20);
+  if (!name) { pseudoInputEl.focus(); return; }
+  savePseudo(name);
+  closePseudoModal();
+  openChatPanel();
+}
+
+// ─── Badge ────────────────────────────────────────────────────────────────
+function updateBadge() {
+  chatUnread.textContent    = unreadCount > 99 ? '99+' : String(unreadCount);
+  chatUnread.style.display  = unreadCount > 0  ? 'flex' : 'none';
+}
+
+// ─── Événements ───────────────────────────────────────────────────────────
+chatBubble.addEventListener('click', () => chatIsOpen ? closeChatPanel() : openChatPanel());
+chatClose .addEventListener('click', closeChatPanel);
+emojiBtnEl.addEventListener('click', (e) => { e.stopPropagation(); toggleEmojiPicker(); });
+chatSend  .addEventListener('click', sendChatMsg);
+
+pseudoChange .addEventListener('click', () => { closeChatPanel(); openPseudoModal(); });
+pseudoConfirm.addEventListener('click', confirmPseudo);
+pseudoCancel .addEventListener('click', closePseudoModal);
+
+// Fermer la modal en cliquant sur le fond ou en appuyant sur Échap
+pseudoModal.addEventListener('click', (e) => {
+  if (e.target === pseudoModal) closePseudoModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pseudoModal.classList.contains('open')) closePseudoModal();
+});
+
+notifBtn.addEventListener('click', () => {
+  notifEnabled = !notifEnabled;
+  localStorage.setItem('kaamelive-notif', notifEnabled ? 'on' : 'off');
+  updateNotifIcon();
+});
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMsg(); }
+});
+
+pseudoInputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') confirmPseudo();
+});
+
+document.addEventListener('click', (e) => {
+  if (!emojiPicker.contains(e.target) && e.target !== emojiBtnEl) closeEmojiPicker();
+});
+
+// Fermer le panel en cliquant sur le player (hors chat)
+document.getElementById('player').addEventListener('click', closeChatPanel);
+
+// ─── Démarrage ────────────────────────────────────────────────────────────
+connectChat();

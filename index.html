@@ -11,6 +11,11 @@
   <div id="player" class="player">
     <video id="video" class="video" playsinline preload="auto"></video>
 
+    <!-- Spinner de chargement -->
+    <div id="loading-spinner" class="loading-spinner">
+      <div class="spinner-ring"></div>
+    </div>
+
     <div id="overlay" class="overlay active">
 
       <!-- ── Top bar ─────────────────────────────────────────── -->
@@ -105,6 +110,80 @@
 
     </div><!-- /overlay -->
   </div><!-- /player -->
+
+  <!-- ═══════════════════════════════ CHAT ════════════════════════════════ -->
+
+  <!-- Pseudo modal -->
+  <div id="pseudo-modal" class="pseudo-modal">
+    <div class="pseudo-box">
+      <p class="pseudo-title">Choisir un pseudo</p>
+      <input id="pseudo-input" class="pseudo-input" type="text"
+             placeholder="Votre pseudo…" maxlength="20"
+             autocomplete="off" spellcheck="false">
+      <div class="pseudo-actions">
+        <button id="pseudo-confirm" class="pseudo-confirm-btn" type="button">Rejoindre</button>
+        <button id="pseudo-cancel"  class="pseudo-cancel-btn"  type="button">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bouton notifications (à côté de la bulle) -->
+  <button id="notif-btn" class="notif-bubble-btn" type="button" style="display:none">
+    <svg id="icon-bell-on" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+    </svg>
+    <svg id="icon-bell-off" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none">
+      <path d="M20 18.69L7.84 6.14 5.27 3.49 4 4.76l2.8 2.8v.01c-.52.99-.8 2.16-.8 3.42V16l-2 2v1h13.73l2 2L20 19.69zM12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-7.32V11c0-3.08-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68c-.29.07-.56.18-.83.28L18 13.68z"/>
+    </svg>
+  </button>
+
+  <!-- Bulle chat -->
+  <button id="chat-bubble" class="chat-bubble" type="button" aria-label="Ouvrir le chat" style="display:none">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+    </svg>
+    <span id="chat-unread" class="chat-unread" style="display:none">0</span>
+  </button>
+
+  <!-- Panel chat -->
+  <div id="chat-panel" class="chat-panel">
+
+    <div class="chat-header">
+      <span class="chat-header-title">Chat</span>
+      <div class="chat-header-actions">
+        <!-- changer de pseudo -->
+        <button id="pseudo-change" class="chat-header-btn" type="button" title="Changer de pseudo">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+          </svg>
+        </button>
+        <!-- fermer -->
+        <button id="chat-close" class="chat-header-btn" type="button" aria-label="Fermer le chat">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="chat-messages" class="chat-messages"></div>
+
+    <!-- Emoji picker (grille, toggle) -->
+    <div id="emoji-picker" class="emoji-picker"></div>
+
+    <div class="chat-input-area">
+      <button id="emoji-btn" class="emoji-toggle-btn" type="button" aria-label="Emojis">😊</button>
+      <input id="chat-input" class="chat-text-input" type="text"
+             placeholder="Message…" maxlength="200"
+             autocomplete="off" spellcheck="false" disabled>
+      <button id="chat-send" class="chat-send-btn" type="button" aria-label="Envoyer" disabled>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+      </button>
+    </div>
+
+  </div><!-- /chat-panel -->
 
   <script src="app.js"></script>
 </body>
