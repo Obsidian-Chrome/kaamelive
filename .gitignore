@@ -10,3 +10,8 @@ desktop.ini
 .stream_start
 node_modules/
 *.log
+
+# Outils locaux — pas besoin dans le dépôt
+cloudflared.exe
+start-stream.bat
+start-stream.ps1
