@@ -1,0 +1,12 @@
+# Fichiers vidéo — servis depuis le PC serveur local, pas dans le dépôt
+videos/
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Résidus divers
+.stream_start
+node_modules/
+*.log
