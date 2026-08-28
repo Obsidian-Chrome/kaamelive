@@ -164,8 +164,63 @@ html, body {
 .overlay-bottom {
   position: relative;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
   padding: 0 2rem 2rem;
+}
+
+/* ─── Timeline ───────────────────────────────────────────────────────────── */
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+}
+
+.time-label {
+  font-size: 0.76rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.65);
+  flex-shrink: 0;
+  width: 3.8rem;
+}
+
+.time-label--right { text-align: right; }
+
+.timeline-track {
+  flex: 1;
+  height: 3px;
+  background: rgba(255,255,255,0.18);
+  border-radius: 2px;
+  position: relative;
+}
+
+.timeline-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  background: #c9a227;
+  border-radius: 2px;
+  transition: width 0.4s linear;
+}
+
+.timeline-dot {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 5px rgba(0,0,0,0.5);
+  transition: left 0.4s linear;
+  pointer-events: none;
 }
 
 .controls-bar {
@@ -213,6 +268,24 @@ html, body {
   gap: 0.5rem;
   color: rgba(255,255,255,0.7);
 }
+
+.mute-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.12s;
+  flex-shrink: 0;
+}
+
+.mute-btn:hover  { background: rgba(255,255,255,0.12); }
+.mute-btn:active { transform: scale(0.9); }
 
 .volume-slider {
   -webkit-appearance: none;

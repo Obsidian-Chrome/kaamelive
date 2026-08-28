@@ -174,6 +174,13 @@ const iconFsEnter   = document.getElementById('icon-fs-enter');
 const iconFsExit    = document.getElementById('icon-fs-exit');
 const viewerBadge   = document.getElementById('viewer-badge');
 const viewerCount   = document.getElementById('viewer-count');
+const muteBtn       = document.getElementById('mute-btn');
+const iconVolOn     = document.getElementById('icon-vol-on');
+const iconVolOff    = document.getElementById('icon-vol-off');
+const timeCurrent   = document.getElementById('time-current');
+const timeTotal     = document.getElementById('time-total');
+const timelineFill  = document.getElementById('timeline-fill');
+const timelineDot   = document.getElementById('timeline-dot');
 
 // ─── Compteur de viewers ──────────────────────────────────────────────────
 // UUID stable par navigateur, stocké en localStorage
@@ -209,12 +216,32 @@ function startPinging() {
 // 'loading' → chargement / seek en cours
 // 'playing' → lecture en cours, synchronisée
 // 'paused'  → pause locale (le stream continue pour les autres)
-let appState    = 'idle';
-let currentEp   = playlist[0];
+let appState       = 'idle';
+let currentEp      = playlist[0];
 let hideTimeout    = null;
 let suppressEvents = false;
+let mutedVolume    = null; // volume sauvegardé avant un mute
 
 const totalDuration = playlist.reduce((sum, e) => sum + e.duration, 0);
+
+// ─── Timeline ─────────────────────────────────────────────────────────────
+function formatTime(secs) {
+  const s = Math.floor(Math.max(0, secs));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+function updateTimeline() {
+  const dur = currentEp ? currentEp.duration : 0;
+  const cur = video.currentTime || 0;
+  const pct = dur > 0 ? Math.min(100, (cur / dur) * 100) : 0;
+  timeCurrent.textContent     = formatTime(cur);
+  timelineFill.style.width    = pct + '%';
+  timelineDot.style.left      = pct + '%';
+}
 
 // ─── Synchronisation UTC ──────────────────────────────────────────────────
 // Calcule l'épisode et la position exacts d'après l'heure UTC actuelle.
@@ -261,12 +288,19 @@ function loadAndSeek(ep, position) {
   suppressEvents = true;
   currentEp = ep;
   episodeTitle.textContent = ep.title;
+  timeTotal.textContent    = formatTime(ep.duration);
+  timelineFill.style.width = '0%';
+  timelineDot.style.left   = '0%';
 
   video.src = videoPath(ep);
   video.load();
 
   video.addEventListener('canplay', () => {
-    video.currentTime = position;
+    // Recalculer la position réelle après le délai de chargement
+    const fresh  = calcSync();
+    const target = (fresh && fresh.ep.folder === ep.folder && fresh.ep.file === ep.file)
+      ? fresh.position : position;
+    video.currentTime = target;
     suppressEvents    = false;
     video.play().catch(() => {});
   }, { once: true });
@@ -348,11 +382,18 @@ function catchupToLive() {
   const sameEp = sync.ep.folder === currentEp.folder && sync.ep.file === currentEp.file;
 
   if (sameEp) {
-    // Même épisode : simple seek
+    // Même épisode : seek puis recalcul au moment où le buffer est prêt
     suppressEvents    = true;
     video.currentTime = sync.position;
-    suppressEvents    = false;
-    video.play().catch(() => {});
+    video.addEventListener('seeked', () => {
+      // Le buffering est terminé : recalculer pour compenser le délai
+      const fresh = calcSync();
+      if (fresh && fresh.ep.folder === currentEp.folder && fresh.ep.file === currentEp.file) {
+        video.currentTime = fresh.position;
+      }
+      suppressEvents = false;
+      video.play().catch(() => {});
+    }, { once: true });
   } else {
     // Épisode différent depuis la pause : rechargement complet
     loadAndSeek(sync.ep, sync.position);
@@ -368,6 +409,10 @@ function toggleFullscreen() {
 }
 
 // ─── Événements vidéo ─────────────────────────────────────────────────────
+video.addEventListener('timeupdate', () => {
+  if (!suppressEvents) updateTimeline();
+});
+
 video.addEventListener('play', () => {
   if (!suppressEvents) setState('playing');
 });
@@ -424,11 +469,12 @@ player.addEventListener('click', (e) => {
 
 volumeSlider.addEventListener('input', () => {
   const v = parseFloat(volumeSlider.value);
-  video.volume = v;
-  volumeSlider.style.setProperty('--vol', v * 100 + '%');
-  localStorage.setItem('kaamelive-volume', String(v));
+  if (v > 0) mutedVolume = null; // slider déplacé manuellement : annule le mute
+  applyVolume(v);
   scheduleHide();
 });
+
+muteBtn.addEventListener('click', () => { toggleMute(); });
 
 fullscreenBtn.addEventListener('click', () => {
   toggleFullscreen();
@@ -478,6 +524,20 @@ function applyVolume(v) {
   volumeSlider.value = String(v);
   volumeSlider.style.setProperty('--vol', v * 100 + '%');
   localStorage.setItem('kaamelive-volume', String(v));
+  // Icône mute
+  iconVolOn.style.display  = v > 0 ? 'block' : 'none';
+  iconVolOff.style.display = v > 0 ? 'none'  : 'block';
+}
+
+function toggleMute() {
+  if (video.volume > 0) {
+    mutedVolume = video.volume;
+    applyVolume(0);
+  } else {
+    applyVolume(mutedVolume ?? 0.2);
+    mutedVolume = null;
+  }
+  scheduleHide();
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────
