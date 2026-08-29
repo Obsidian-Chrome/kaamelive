@@ -510,7 +510,16 @@ document.addEventListener('fullscreenchange', () => {
   });
 });
 
+function isTypingInField() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
+}
+
 document.addEventListener('keydown', e => {
+  if (isTypingInField()) return; // ne pas parasiter la saisie (chat, pseudo…)
+
   switch (e.code) {
     case 'Space':
       e.preventDefault();
@@ -648,16 +657,27 @@ function getChatWsUrl() {
 }
 
 // ─── Connexion ────────────────────────────────────────────────────────────
+// Une coupure brève (alt-tab, veille, micro-coupure réseau) ne doit pas
+// spammer le chat : on n'affiche un message que si la coupure dépasse
+// DISCONNECT_NOTICE_DELAY, et "reconnecté" seulement si on avait prévenu.
+const DISCONNECT_NOTICE_DELAY = 6000;
+let disconnectNoticeTimer = null;
+let wasReportedDisconnected = false;
+
 function connectChat() {
   clearTimeout(wsRetryTimer);
   try { chatWs = new WebSocket(getChatWsUrl()); } catch { scheduleWsRetry(); return; }
 
   chatWs.onopen = () => {
     clearTimeout(wsRetryTimer);
+    clearTimeout(disconnectNoticeTimer);
     chatBubble.classList.remove('chat-bubble--offline');
     chatInput.disabled  = false;
     chatSend.disabled   = false;
-    appendSystemMsg('Connecté au chat');
+    if (wasReportedDisconnected) {
+      appendSystemMsg('Reconnecté au chat');
+      wasReportedDisconnected = false;
+    }
   };
 
   chatWs.onmessage = ({ data }) => {
@@ -667,11 +687,17 @@ function connectChat() {
   };
 
   chatWs.onclose = chatWs.onerror = () => {
-    chatBubble.classList.add('chat-bubble--offline');
     chatInput.disabled = true;
     chatSend.disabled  = true;
-    appendSystemMsg('Déconnecté — reconnexion…');
     scheduleWsRetry();
+
+    // Attendre avant de considérer la coupure comme réelle
+    clearTimeout(disconnectNoticeTimer);
+    disconnectNoticeTimer = setTimeout(() => {
+      chatBubble.classList.add('chat-bubble--offline');
+      appendSystemMsg('Chat déconnecté — reconnexion…');
+      wasReportedDisconnected = true;
+    }, DISCONNECT_NOTICE_DELAY);
   };
 }
 
@@ -683,8 +709,9 @@ function scheduleWsRetry() {
 // ─── Réception message ───────────────────────────────────────────────────
 function onChatMsg(msg) {
   const mine = msg.pseudo === getPseudo();
-  addMsgEl(msg.pseudo, msg.text, msg.time, mine);
-  if (!mine) playNotif();
+  if (mine) return; // déjà affiché en local à l'envoi (voir sendChatMsg)
+  addMsgEl(msg.pseudo, msg.text, msg.time, false);
+  playNotif();
   if (!chatIsOpen) { unreadCount++; updateBadge(); }
 }
 
@@ -717,6 +744,11 @@ function esc(s) {
 function sendChatMsg() {
   const text = chatInput.value.trim();
   if (!text || !chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+
+  // Affichage optimiste : pas d'attente de l'aller-retour serveur
+  const now = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  addMsgEl(getPseudo(), text, now, true);
+
   chatWs.send(JSON.stringify({ type: 'chat', pseudo: getPseudo(), text }));
   chatInput.value = '';
   closeEmojiPicker();
